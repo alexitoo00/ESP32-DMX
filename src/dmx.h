@@ -2,6 +2,10 @@
  * This file is part of the ESP32-DMX distribution (https://github.com/luksal/ESP32-DMX).
  * Copyright (c) 2021 Lukas Salomon.
  * 
+ * Reviewed by Yoann Darche 2022 (https://github.com/yoann-darche/ESP32-DMX)
+ * to ensure a better stability (upadting the state machine of RX and tmp memory)
+ * used the UART_SCLK_REF_TICK for source clock of the UART
+ * 
  * This program is free software: you can redistribute it and/or modify  
  * it under the terms of the GNU General Public License as published by  
  * the Free Software Foundation, version 3.
@@ -27,7 +31,7 @@
 #define DMX_h
 
 enum DMXDirection { input, output };
-enum DMXState { DMX_IDLE, DMX_BREAK, DMX_DATA, DMX_OUTPUT };
+enum DMXState { DMX_IDLE, DMX_BREAK, DMX_DATA,DMX_DONE, DMX_OUTPUT };
 
 class DMX
 {
@@ -57,7 +61,8 @@ class DMX
 
         static long last_dmx_packet;                        // timestamp for the last received packet
 
-        static uint8_t dmx_data[513];                       // stores the received dmx data
+        static uint8_t dmx_data[513];                       // stores the validated dmx data
+        static uint8_t tmp_dmx_data[513];                   // stores the received dmx data
 
         static void uart_event_task(void *pvParameters);    // event task
 

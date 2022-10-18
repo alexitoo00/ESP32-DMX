@@ -2,6 +2,10 @@
  * This file is part of the ESP32-DMX distribution (https://github.com/luksal/ESP32-DMX).
  * Copyright (c) 2021 Lukas Salomon.
  * 
+ * Reviewed by Yoann Darche 2022 (https://github.com/yoann-darche/ESP32-DMX)
+ * to ensure a better stability (upadting the state machine of RX and tmp memory)
+ * used the UART_SCLK_REF_TICK for source clock of the UART
+ * 
  * This program is free software: you can redistribute it and/or modify  
  * it under the terms of the GNU General Public License as published by  
  * the Free Software Foundation, version 3.
@@ -15,6 +19,9 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <Arduino.h>
+#include "driver/gpio.h"
+#include "hal/uart_types.h"
 #include <dmx.h>
 
 #define DMX_SERIAL_INPUT_PIN    GPIO_NUM_16 // pin for dmx rx
@@ -25,7 +32,7 @@
 
 #define HEALTHY_TIME            500         // timeout in ms 
 
-#define BUF_SIZE                1024        //  buffer size for rx events
+#define BUF_SIZE                513        //  buffer size for rx events (il y a 513 trames en DMX512)
 
 #define DMX_CORE                1           // select the core the rx/tx thread should run on
 
@@ -42,6 +49,7 @@ uint16_t DMX::current_rx_addr = 0;
 long DMX::last_dmx_packet = 0;
 
 uint8_t DMX::dmx_data[513];
+uint8_t DMX::tmp_dmx_data[513];
 
 DMX::DMX()
 {
@@ -57,7 +65,8 @@ void DMX::Initialize(DMXDirection direction)
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_2,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_REF_TICK                // Better source clock for ESP32 in my case
     };
 
     uart_param_config(DMX_UART_NUM, &uart_config);
@@ -212,6 +221,7 @@ void DMX::uart_event_task(void *pvParameters)
 {
     uart_event_t event;
     uint8_t* dtmp = (uint8_t*) malloc(BUF_SIZE);
+    size_t data_size = 0;
     for(;;)
     {
         // wait for data in the dmx_queue
@@ -223,13 +233,17 @@ void DMX::uart_event_task(void *pvParameters)
                 case UART_DATA:
                     // read the received data
                     uart_read_bytes(DMX_UART_NUM, dtmp, event.size, portMAX_DELAY);
+
+
                     // check if break detected
                     if(dmx_state == DMX_BREAK)
                     {
+
                         // if not 0, then RDM or custom protocol
                         if(dtmp[0] == 0)
                         {
                         dmx_state = DMX_DATA;
+                        
                         // reset dmx adress to 0
                         current_rx_addr = 0;
 #ifndef DMX_IGNORE_THREADSAFETY
@@ -240,7 +254,11 @@ void DMX::uart_event_task(void *pvParameters)
 #ifndef DMX_IGNORE_THREADSAFETY
                         xSemaphoreGive(sync_dmx);
 #endif
+                       }
+                        else {
+                            dmx_state = DMX_IDLE;
                         }
+      
                     }
                     // check if in data receive mode
                     if(dmx_state == DMX_DATA)
@@ -248,12 +266,16 @@ void DMX::uart_event_task(void *pvParameters)
 #ifndef DMX_IGNORE_THREADSAFETY
                         xSemaphoreTake(sync_dmx, portMAX_DELAY);
 #endif
+
                         // copy received bytes to dmx data array
                         for(int i = 0; i < event.size; i++)
                         {
                             if(current_rx_addr < 513)
                             {
-                                dmx_data[current_rx_addr++] = dtmp[i];
+                                tmp_dmx_data[current_rx_addr++] = dtmp[i];
+                                if(current_rx_addr == 513)  dmx_state = DMX_DONE; 
+                            } else {
+                                dmx_state = DMX_DONE;                                
                             }
                         }
 #ifndef DMX_IGNORE_THREADSAFETY
@@ -263,10 +285,24 @@ void DMX::uart_event_task(void *pvParameters)
                     break;
                 case UART_BREAK:
                     // break detected
-                    // clear queue und flush received bytes                    
-                    uart_flush_input(DMX_UART_NUM);
-                    xQueueReset(dmx_rx_queue);
-                    dmx_state = DMX_BREAK;
+                    // clear queue und flush received bytes  
+
+                    if(dmx_state == DMX_DONE) { 
+                        uart_flush_input(DMX_UART_NUM);
+                        xQueueReset(dmx_rx_queue);
+                        dmx_state = DMX_BREAK;
+                        memcpy((uint8_t *)dmx_data, tmp_dmx_data, 513);
+                        
+                    }  else if (dmx_state == DMX_IDLE) {
+                        uart_flush_input(DMX_UART_NUM);
+                        xQueueReset(dmx_rx_queue);                        
+                        dmx_state = DMX_BREAK;                        
+                    } else {
+                        uart_flush_input(DMX_UART_NUM);
+                        xQueueReset(dmx_rx_queue);
+                        dmx_state = DMX_IDLE;
+                    }
+
                     break;
                 case UART_FRAME_ERR:
                 case UART_PARITY_ERR:
