@@ -9,3 +9,7 @@ Driver outputs DMX using UART2 on GPIO pin 17. Feel free to experiment with othe
 Driver uses pin 4 to change direction of dmx dataflow.
 
 Even if it is an Arduino library, it is possible to use the two source files in IDF projects since it has no dependency on Arduino libraries.
+
+Reviewed by Yoann Darche 2022 (https://github.com/yoann-darche/ESP32-DMX)
+to ensure a better stability (upadting the state machine of RX and tmp memory)
+used the UART_SCLK_REF_TICK for source clock of the UART
