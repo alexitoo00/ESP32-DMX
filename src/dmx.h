@@ -2,9 +2,11 @@
  * This file is part of the ESP32-DMX distribution (https://github.com/luksal/ESP32-DMX).
  * Copyright (c) 2021 Lukas Salomon.
  * 
- * Reviewed by Yoann Darche 2022 (https://github.com/yoann-darche/ESP32-DMX)
+ * Reviewed by Yoann Darche 2022-2023 (https://github.com/yoann-darche/ESP32-DMX)
  * to ensure a better stability (upadting the state machine of RX and tmp memory)
  * used the UART_SCLK_REF_TICK for source clock of the UART
+ * - Adding a filter when all data are 0 (possibility of UART sync error) with blackout detection
+ * - Adding a define to disable the I/O Dir pin (in case the direction is defined directly with the hardware)
  * 
  * This program is free software: you can redistribute it and/or modify  
  * it under the terms of the GNU General Public License as published by  
@@ -30,13 +32,18 @@
 #ifndef DMX_h
 #define DMX_h
 
-enum DMXDirection { input, output };
+
+enum DMXDirection { DMX_DIR_INPUT, DMX_DIR_OUTPUT };
 enum DMXState { DMX_IDLE, DMX_BREAK, DMX_DATA,DMX_DONE, DMX_OUTPUT };
 
 class DMX
 {
     public:
-        static void Initialize(DMXDirection direction);     // initialize library
+        static void Initialize(DMXDirection direction, 
+                               uint16_t StartAddr=1, uint16_t NbChannels=512);    // initialize library
+
+        static void SetDmxStartAdress(uint16_t StartAddr);
+        static void SetDmxNbChannels(uint16_t nb);
 
         static uint8_t Read(uint16_t channel);              // returns the dmx value for the givven address (values from 1 to 512)
 
@@ -50,8 +57,12 @@ class DMX
         
     private:
         DMX();                                              // hide constructor
+        ~DMX();                                             // hide destructor
 
-        static QueueHandle_t dmx_rx_queue;                  // queue for uart rx events
+        static uint16_t _StartDMXAddr;                      // First adress liestend
+        static uint16_t _NbChannels;                        // Number of channels listened from the start address
+
+        static QueueHandle_t  dmx_rx_queue;                  // queue for uart rx events
         
         static SemaphoreHandle_t sync_dmx;                  // semaphore for syncronising access to dmx array
 
@@ -61,12 +72,21 @@ class DMX
 
         static long last_dmx_packet;                        // timestamp for the last received packet
 
-        static uint8_t dmx_data[513];                       // stores the validated dmx data
-        static uint8_t tmp_dmx_data[513];                   // stores the received dmx data
+        static uint8_t * dmx_data;                          // stores the validated dmx data
+        static uint8_t * tmp_dmx_data;                      // stores the received dmx data
+
+
+
+        // Filter on Zéros DMX Frame
+        static bool isAllZero;                              // indicate when a zéro frame is detected
+        static uint8_t CptAllZeroFrame;                     // store the number of successive zéro frame detected, if more than 12 ==> Blackout
+
 
         static void uart_event_task(void *pvParameters);    // event task
 
         static void uart_send_task(void*pvParameters);      // transmit task
+
+        static void createBuffer(bool TmpBufferCreate=false);    // Manage the allocation/reallocation of buffer
 };
 
 #endif
