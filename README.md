@@ -6,7 +6,7 @@ Can be used with Arduino or plain ESP-IDF.
 
 Driver inputs DMX using UART2 on GPIO pin 27 (originally 16). Feel free to experiment with other UARTs and Pins (that's work).
 Driver outputs DMX using UART2 on GPIO pin 14 (originally 17). Feel free to experiment with other UARTs and Pins (that's work).
-Driver uses pin 4 to change direction of dmx dataflow (it can be desabled by #define, if the hardware
+Driver uses pin 4 to change direction of dmx dataflow (it can be disabled by #define, if the hardware
 set directly this pin in RX or TX)
 
 /!\ If you plan to use ESP32-WROOVER don't use GPIO 16 & 17 as they are used for internal PSRAM.
