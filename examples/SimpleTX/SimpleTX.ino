@@ -6,7 +6,7 @@ uint8_t send_value = 0;
 void setup() {
   Serial.begin(115200);
 
-  DMX::Initialize(output);
+  DMX::Initialize(DMX_DIR_OUTPUT);
 
   DMX::Write(8, 69);
 }
